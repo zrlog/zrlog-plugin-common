@@ -56,6 +56,12 @@ public class MsgPacketDispose {
             actionHandler.getBlogRuntimePath(session, msgPacket);
         } else if (action == ActionType.CREATE_ARTICLE) {
             actionHandler.createArticle(session, msgPacket);
+        } else if (action == ActionType.ARTICLE_EXTENSION_GET) {
+            actionHandler.getArticleExtension(session, msgPacket);
+        } else if (action == ActionType.ARTICLE_EXTENSION_SET) {
+            actionHandler.setArticleExtension(session, msgPacket);
+        } else if (action == ActionType.ARTICLE_EXTENSION_QUERY) {
+            actionHandler.queryArticleExtension(session, msgPacket);
         } else if (action == ActionType.REFRESH_CACHE) {
             actionHandler.refreshCache(session, msgPacket);
         } else if (action == ActionType.ARTICLE_VISIT_COUNT_ADD_ONE) {

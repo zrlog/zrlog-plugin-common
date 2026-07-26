@@ -35,6 +35,15 @@ public interface IActionHandler {
 
     void createArticle(final IOSession session, final MsgPacket msgPacket);
 
+    default void getArticleExtension(final IOSession session, final MsgPacket msgPacket) {
+    }
+
+    default void setArticleExtension(final IOSession session, final MsgPacket msgPacket) {
+    }
+
+    default void queryArticleExtension(final IOSession session, final MsgPacket msgPacket) {
+    }
+
     void refreshCache(final IOSession session, final MsgPacket msgPacket);
 
     void articleVisitViewCountAddOne(final IOSession session, final MsgPacket msgPacket);

@@ -86,6 +86,8 @@ public class PluginNativeImageUtils {
                 NotificationChannelProvider.class, NotificationChannelQueryResult.class,
                 SchedulerQueryRequest.class, SchedulerQueryResult.class, SchedulerUpdateRequest.class, SchedulerUpdateResult.class,
                 PluginProcessInfo.class, InitConnectRequest.class, ServiceRequest.class, WebsiteKeyRequest.class,
-                DbPropertiesResponse.class));
+                DbPropertiesResponse.class, ArticleExtensionArticle.class, ArticleExtensionFilter.class,
+                ArticleExtensionGetRequest.class, ArticleExtensionQueryRequest.class, ArticleExtensionQueryResult.class,
+                ArticleExtensionResult.class, ArticleExtensionSetRequest.class));
     }
 }
