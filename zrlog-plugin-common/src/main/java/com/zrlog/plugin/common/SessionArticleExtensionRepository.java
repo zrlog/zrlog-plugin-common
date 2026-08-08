@@ -1,6 +1,7 @@
 package com.zrlog.plugin.common;
 
 import com.zrlog.plugin.IOSession;
+import com.zrlog.plugin.ResponseLease;
 import com.zrlog.plugin.data.codec.ContentType;
 import com.zrlog.plugin.data.codec.MsgPacket;
 import com.zrlog.plugin.data.codec.MsgPacketStatus;
@@ -33,12 +34,12 @@ public class SessionArticleExtensionRepository {
     }
 
     public ArticleExtensionResult get(long articleId, Duration timeout) {
-        MsgPacket response = request(new ArticleExtensionGetRequest(articleId),
-                ActionType.ARTICLE_EXTENSION_GET, timeout);
-        if (response == null) {
-            return ArticleExtensionResult.error("get article extension timeout");
-        }
-        try {
+        try (ResponseLease lease = request(new ArticleExtensionGetRequest(articleId),
+                ActionType.ARTICLE_EXTENSION_GET, timeout)) {
+            if (lease == null) {
+                return ArticleExtensionResult.error("get article extension timeout");
+            }
+            MsgPacket response = lease.getPacket();
             ArticleExtensionResult result = response.convertToClass(ArticleExtensionResult.class);
             return result == null ? ArticleExtensionResult.error("get article extension failed") : result;
         } catch (RuntimeException e) {
@@ -51,11 +52,11 @@ public class SessionArticleExtensionRepository {
     }
 
     public ArticleExtensionResult set(ArticleExtensionSetRequest request, Duration timeout) {
-        MsgPacket response = request(request, ActionType.ARTICLE_EXTENSION_SET, timeout);
-        if (response == null) {
-            return ArticleExtensionResult.error("set article extension timeout");
-        }
-        try {
+        try (ResponseLease lease = request(request, ActionType.ARTICLE_EXTENSION_SET, timeout)) {
+            if (lease == null) {
+                return ArticleExtensionResult.error("set article extension timeout");
+            }
+            MsgPacket response = lease.getPacket();
             ArticleExtensionResult result = response.convertToClass(ArticleExtensionResult.class);
             return result == null ? ArticleExtensionResult.error("set article extension failed") : result;
         } catch (RuntimeException e) {
@@ -68,11 +69,11 @@ public class SessionArticleExtensionRepository {
     }
 
     public ArticleExtensionQueryResult query(ArticleExtensionQueryRequest request, Duration timeout) {
-        MsgPacket response = request(request, ActionType.ARTICLE_EXTENSION_QUERY, timeout);
-        if (response == null) {
-            return ArticleExtensionQueryResult.error("query article extension timeout");
-        }
-        try {
+        try (ResponseLease lease = request(request, ActionType.ARTICLE_EXTENSION_QUERY, timeout)) {
+            if (lease == null) {
+                return ArticleExtensionQueryResult.error("query article extension timeout");
+            }
+            MsgPacket response = lease.getPacket();
             ArticleExtensionQueryResult result = response.convertToClass(ArticleExtensionQueryResult.class);
             return result == null ? ArticleExtensionQueryResult.error("query article extension failed") : result;
         } catch (RuntimeException e) {
@@ -80,11 +81,11 @@ public class SessionArticleExtensionRepository {
         }
     }
 
-    private MsgPacket request(Object data, ActionType actionType, Duration timeout) {
+    private ResponseLease request(Object data, ActionType actionType, Duration timeout) {
         int msgId = IdUtil.getInt();
         session.sendMsg(new MsgPacket(data, ContentType.JSON,
                 MsgPacketStatus.SEND_REQUEST, msgId, actionType.name()));
-        return session.getResponseMsgPacketByMsgId(msgId, normalizeTimeout(timeout));
+        return session.getResponseLeaseByMsgId(msgId, normalizeTimeout(timeout));
     }
 
     private Duration normalizeTimeout(Duration timeout) {

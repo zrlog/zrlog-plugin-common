@@ -14,6 +14,8 @@ import com.zrlog.plugin.data.codec.MsgPacketStatus;
 import com.zrlog.plugin.data.codec.SocketCodec;
 import com.zrlog.plugin.data.codec.SocketDecode;
 import com.zrlog.plugin.data.codec.SocketEncode;
+import com.zrlog.plugin.data.codec.SocketPacketLimits;
+import com.zrlog.plugin.data.codec.SocketPacketMemoryBudget;
 import com.zrlog.plugin.message.Plugin;
 import com.zrlog.plugin.message.PluginCapability;
 import com.zrlog.plugin.render.IRenderHandler;
@@ -28,16 +30,23 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.*;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
 public class NioClient {
 
-
+    static final int MESSAGE_HANDLER_THREADS = 4;
+    static final int MESSAGE_HANDLER_QUEUE_CAPACITY = 8;
+    static final long SOCKET_PACKET_MEMORY_BUDGET_BYTES = SocketPacketLimits.DEFAULT_MAX_DATA_LENGTH_BYTES;
     private static final Gson GSON = new Gson();
     private final IConnectHandler connectHandler;
     private final IRenderHandler renderHandler;
     private final IActionHandler actionHandler;
+    private final AtomicBoolean exitRequested = new AtomicBoolean(false);
 
     public NioClient() {
         this(null);
@@ -252,8 +261,9 @@ public class NioClient {
                             if (channel.isConnectionPending()) {
                                 channel.finishConnect();
                             }
-                            socketDecode = new SocketDecode(Executors.newFixedThreadPool(4));
+                            socketDecode = newSocketDecode(newMessageHandlerExecutor());
                             session = new IOSession(channel, selector, new SocketCodec(new SocketEncode(), socketDecode), actionHandler, renderHandler);
+                            exitWhenSessionCloses(session);
                             session.setPlugin(plugin);
                             session.getAttr().put("_actionClassList", classList);
                             session.getAttr().put("_pluginClass", pluginAction);
@@ -284,6 +294,20 @@ public class NioClient {
         } catch (Exception e) {
             exitPlugin(e);
         }
+    }
+
+    static ThreadPoolExecutor newMessageHandlerExecutor() {
+        return new ThreadPoolExecutor(MESSAGE_HANDLER_THREADS, MESSAGE_HANDLER_THREADS,
+                0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MESSAGE_HANDLER_QUEUE_CAPACITY),
+                new ThreadPoolExecutor.CallerRunsPolicy());
+    }
+
+    static SocketPacketMemoryBudget newSocketPacketMemoryBudget() {
+        return new SocketPacketMemoryBudget(SOCKET_PACKET_MEMORY_BUDGET_BYTES);
+    }
+
+    static SocketDecode newSocketDecode(Executor messageHandlerExecutor) {
+        return new SocketDecode(messageHandlerExecutor, newSocketPacketMemoryBudget());
     }
 
     private List<PluginCapability> readCapabilities(Class<? extends IPluginService> serviceClass) {
@@ -355,8 +379,23 @@ public class NioClient {
         }
     }
 
+    void exitWhenSessionCloses(IOSession session) {
+        session.addCloseListener(() -> exitPlugin(null));
+    }
+
     private void exitPlugin(Exception e) {
-        LoggerUtil.getLogger(NioClient.class).log(Level.SEVERE, "", e);
-        System.exit(0);
+        if (!exitRequested.compareAndSet(false, true)) {
+            return;
+        }
+        if (e == null) {
+            LoggerUtil.getLogger(NioClient.class).info("Plugin session closed");
+        } else {
+            LoggerUtil.getLogger(NioClient.class).log(Level.SEVERE, "", e);
+        }
+        terminateProcess(0);
+    }
+
+    void terminateProcess(int status) {
+        System.exit(status);
     }
 }

@@ -15,6 +15,7 @@ public class MsgPacket {
     private byte methodLength;
     private String methodStr;
     private ByteBuffer data;
+    private FilePacketPayload filePayload;
     private int dataLength;
 
     public MsgPacket(Object data, ContentType contentType, MsgPacketStatus status, int msgId, String methodStr) {
@@ -23,6 +24,15 @@ public class MsgPacket {
         this.status = status;
         this.msgId = msgId;
         this.methodStr = methodStr;
+        if (contentType == ContentType.FILE) {
+            if (!(data instanceof java.io.File)) {
+                throw new IllegalArgumentException("obj not a file " + data);
+            }
+            this.filePayload = FilePacketPayload.forSend((java.io.File) data);
+            this.dataLength = filePayload.encodedLength();
+            this.methodLength = (byte) methodStr.getBytes().length;
+            return;
+        }
         ConvertMsgBody convertMsgBody = getConvertMsgBody(contentType);
         if (convertMsgBody == null) {
             throw new RuntimeException("not found such convert " + contentType);
@@ -39,8 +49,6 @@ public class MsgPacket {
             return new JsonConvertMsgBody();
         } else if (contentType == ContentType.HTML || contentType == ContentType.XML || contentType == ContentType.IMAGE_SVG_XML) {
             return new StringConvertMsgBody();
-        } else if (contentType == ContentType.FILE) {
-            return new FileConvertMsgBody();
         }
         return null;
     }
@@ -68,6 +76,33 @@ public class MsgPacket {
 
     public void setData(ByteBuffer data) {
         this.data = data;
+        if (data != null) {
+            this.filePayload = null;
+        }
+    }
+
+    public FilePacketPayload getFilePayload() {
+        return filePayload;
+    }
+
+    public void setFilePayload(FilePacketPayload filePayload) {
+        this.filePayload = filePayload;
+        if (filePayload != null) {
+            this.data = null;
+        }
+    }
+
+    FilePacketPayload detachFilePayload() {
+        FilePacketPayload payload = filePayload;
+        filePayload = null;
+        return payload;
+    }
+
+    void releaseFilePayload() {
+        FilePacketPayload payload = detachFilePayload();
+        if (payload != null) {
+            payload.close();
+        }
     }
 
     public int getMsgId() {

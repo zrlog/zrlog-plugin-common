@@ -2,6 +2,7 @@ package com.zrlog.plugin.client;
 
 import com.google.gson.Gson;
 import com.zrlog.plugin.IOSession;
+import com.zrlog.plugin.ResponseLease;
 import com.zrlog.plugin.common.IdUtil;
 import com.zrlog.plugin.common.type.HttpMethod;
 import com.zrlog.plugin.data.codec.*;
@@ -23,8 +24,10 @@ public class HttpClientUtils {
     public static HttpResponseInfo sendHttpRequest(BaseHttpRequestInfo httpRequestInfo, IOSession ioSession, Duration readTimeout) {
         int id = IdUtil.getInt();
         ioSession.sendMsg(ContentType.JSON, httpRequestInfo, ActionType.HTTP_METHOD.name(), id, MsgPacketStatus.SEND_REQUEST);
-        MsgPacket msgPacket = ioSession.getResponseMsgPacketByMsgId(id, readTimeout);
-        return new Gson().fromJson(new String(msgPacket.getData().array()), HttpResponseInfo.class);
+        try (ResponseLease lease = ioSession.getResponseLeaseByMsgId(id, readTimeout)) {
+            MsgPacket msgPacket = lease.getPacket();
+            return new Gson().fromJson(new String(msgPacket.getData().array()), HttpResponseInfo.class);
+        }
     }
 
     public static <T> T sendGetRequest(String url, Class<T> clazz, IOSession ioSession, Duration readTimeout) {
