@@ -31,6 +31,13 @@ import java.util.logging.Logger;
 
 public class SocketDecode {
 
+    public static final class SocketSessionClosedException extends IOException {
+
+        public SocketSessionClosedException() {
+            super("connect closed");
+        }
+    }
+
     private static final Logger LOGGER = LoggerUtil.getLogger(SocketDecode.class);
     private static final Gson GSON = new Gson();
     private static final SocketPacketFileBudget GLOBAL_TEMP_FILE_BUDGET = new SocketPacketFileBudget(
@@ -130,7 +137,7 @@ public class SocketDecode {
         SocketChannel channel = (SocketChannel) session.getSystemAttr().get("_channel");
 
         if (!channel.isOpen() || channel.socket().isClosed()) {
-            throw new EOFException();
+            throw new SocketSessionClosedException();
         }
         if (methodAndLengthAndContentType == null) {
             read(channel, header);
@@ -227,7 +234,7 @@ public class SocketDecode {
     private void read(SocketChannel channel, ByteBuffer buffer) throws IOException {
         int length = channel.read(buffer);
         if (length == -1) {
-            throw new IOException("connect closed");
+            throw new SocketSessionClosedException();
         }
     }
 

@@ -310,7 +310,7 @@ public class NioClient {
         return new SocketDecode(messageHandlerExecutor, newSocketPacketMemoryBudget());
     }
 
-    private List<PluginCapability> readCapabilities(Class<? extends IPluginService> serviceClass) {
+    List<PluginCapability> readCapabilities(Class<? extends IPluginService> serviceClass) {
         List<PluginCapability> capabilities = new ArrayList<>();
         Service service = serviceClass.getAnnotation(Service.class);
         Capability capability = serviceClass.getAnnotation(Capability.class);
@@ -387,12 +387,16 @@ public class NioClient {
         if (!exitRequested.compareAndSet(false, true)) {
             return;
         }
-        if (e == null) {
+        if (e == null || isSocketSessionClosed(e)) {
             LoggerUtil.getLogger(NioClient.class).info("Plugin session closed");
         } else {
             LoggerUtil.getLogger(NioClient.class).log(Level.SEVERE, "", e);
         }
         terminateProcess(0);
+    }
+
+    static boolean isSocketSessionClosed(Exception e) {
+        return e instanceof SocketDecode.SocketSessionClosedException;
     }
 
     void terminateProcess(int status) {
