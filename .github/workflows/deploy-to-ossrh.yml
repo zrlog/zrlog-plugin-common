@@ -1,54 +1,50 @@
-name: Release to Maven Central
+name: Verify and release to Maven Central
 
 on:
   push:
-    tags:
-      - 'v*'  # Only run on version tags like v1.2.3
-    branches:
-      - 'main'
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-on-ubuntu-${{github.ref_name}}-ossrh   # 同一个 group 的任务会排队执行
-      cancel-in-progress: true # 取消前一个任务
-
+      group: central-${{ github.ref }}
+      cancel-in-progress: false
     steps:
-    - name: Checkout source code
-      uses: actions/checkout@v4
-
-    - name: Set up JDK
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '11'
-        cache: 'maven'
-        server-id: central
-        settings-path: ${{ github.workspace }}
-
-    - name: Generate settings.xml
-      run: |
-        cat > $GITHUB_WORKSPACE/settings.xml <<EOF
-        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-          <servers>
-            <server>
-              <id>central</id>
-              <username>${{ secrets.OSSRH_USERNAME }}</username>
-              <password>${{ secrets.OSSRH_PASSWORD }}</password>
-            </server>
-          </servers>
-        </settings>
-        EOF
-    - name: Import GPG key
-      run: |
-        echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
-      env:
-        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-
-    - name: Build and Deploy to OSSRH
-      run: ./mvnw clean deploy -s $GITHUB_WORKSPACE/settings.xml -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}
-      env:
-        GPG_TTY: $(tty)
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+      - name: Verify immutable release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version=$(./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout)
+          test "$GITHUB_REF_NAME" = "v$version"
+          [[ "$version" != *SNAPSHOT* ]]
+      - name: Verify release dependencies and tests
+        run: ./mvnw -B -ntp clean verify
+      - name: Import signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Publish to Maven Central
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CENTRAL_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: ./mvnw -B -ntp deploy -Dgpg.passphrase="$MAVEN_GPG_PASSPHRASE"

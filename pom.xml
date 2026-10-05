@@ -4,7 +4,7 @@
     <groupId>com.hibegin</groupId>
     <artifactId>zrlog-plugin-parent</artifactId>
     <modelVersion>4.0.0</modelVersion>
-    <version>4.0.5-SNAPSHOT</version>
+    <version>4.0.5</version>
     <packaging>pom</packaging>
     <description>ZrLog plugin protocol and shared libraries</description>
     <name>ZrLog Plugin Common</name>
@@ -33,7 +33,7 @@
         <connection>scm:git:https://github.com/zrlog/zrlog-plugin-common</connection>
         <developerConnection>scm:git:https://github.com/zrlog/zrlog-plugin-common</developerConnection>
         <url>https://github.com/zrlog/zrlog-plugin-common</url>
-        <tag>zrlog-plugin-parent-3.0.5-SNAPSHOT</tag>
+        <tag>v${project.version}</tag>
     </scm>
     <issueManagement>
         <system>Github Issue</system>
@@ -56,6 +56,28 @@
             </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>release-versions</id>
+                        <phase>validate</phase>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <requireReleaseVersion/>
+                                <requireReleaseDeps>
+                                    <onlyWhenRelease>false</onlyWhenRelease>
+                                    <searchTransitive>true</searchTransitive>
+                                    <failWhenParentIsSnapshot>true</failWhenParentIsSnapshot>
+                                </requireReleaseDeps>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
@@ -160,12 +182,12 @@
             <dependency>
                 <groupId>com.hibegin</groupId>
                 <artifactId>zrlog-plugin-common</artifactId>
-                <version>4.0.5-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.hibegin</groupId>
                 <artifactId>zrlog-plugin-freemarker-render</artifactId>
-                <version>4.0.5-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

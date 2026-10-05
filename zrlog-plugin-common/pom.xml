@@ -4,10 +4,10 @@
     <parent>
         <groupId>com.hibegin</groupId>
         <artifactId>zrlog-plugin-parent</artifactId>
-        <version>4.0.5-SNAPSHOT</version>
+        <version>4.0.5</version>
     </parent>
     <artifactId>zrlog-plugin-common</artifactId>
-    <version>4.0.5-SNAPSHOT</version>
+    <version>4.0.5</version>
     <modelVersion>4.0.0</modelVersion>
     <packaging>jar</packaging>
 
