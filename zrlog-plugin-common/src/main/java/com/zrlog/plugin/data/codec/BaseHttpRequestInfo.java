@@ -14,6 +14,9 @@ public class BaseHttpRequestInfo {
     protected Map<String, String> header;
     protected byte[] requestBody;
     protected HttpMethod httpMethod;
+    // Opt-in HTTP_METHOD response mode; ordinary callers keep the bounded JSON response.
+    protected boolean responseBodyAsFile;
+    protected Long maxResponseBodyBytes;
     protected Boolean darkMode;
     protected String adminColorPrimary;
 
@@ -47,6 +50,22 @@ public class BaseHttpRequestInfo {
 
     public void setHttpMethod(HttpMethod httpMethod) {
         this.httpMethod = httpMethod;
+    }
+
+    public boolean isResponseBodyAsFile() {
+        return responseBodyAsFile;
+    }
+
+    public void setResponseBodyAsFile(boolean responseBodyAsFile) {
+        this.responseBodyAsFile = responseBodyAsFile;
+    }
+
+    public Long getMaxResponseBodyBytes() {
+        return maxResponseBodyBytes;
+    }
+
+    public void setMaxResponseBodyBytes(Long maxResponseBodyBytes) {
+        this.maxResponseBodyBytes = maxResponseBodyBytes;
     }
 
     public Boolean getDarkMode() {

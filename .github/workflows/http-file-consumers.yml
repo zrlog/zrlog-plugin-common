@@ -1,0 +1,94 @@
+name: Verify shared HTTP file consumers
+
+on:
+  workflow_call:
+    inputs:
+      core_commit:
+        description: Full plugin-core commit SHA to test with this common candidate
+        required: true
+        type: string
+      importer_commit:
+        description: Full importer commit SHA to test with this common candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  consumers:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      # Source candidates must not enter the Maven cache used by published-version builds.
+      MAVEN_OPTS: -Dmaven.repo.local=${{ runner.temp }}/http-file-candidate-m2
+    steps:
+      - name: Validate pinned consumer sources
+        env:
+          CORE_COMMIT: ${{ inputs.core_commit }}
+          IMPORTER_COMMIT: ${{ inputs.importer_commit }}
+        run: |
+          [[ "$CORE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMPORTER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          path: common
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: zrlog/zrlog-plugin-core
+          ref: ${{ inputs.core_commit }}
+          path: core
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: zrlog-extensions/zrlog-plugin-importer
+          ref: ${{ inputs.importer_commit }}
+          path: importer
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+      - name: Test and install common candidate (no publication)
+        working-directory: common
+        run: ./mvnw -B -ntp clean install
+      - name: Test core HTTP and FILE transport on Java 11
+        working-directory: core
+        run: ./mvnw -B -ntp clean test
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: graalvm
+          github-token: ${{ github.token }}
+      - name: Test Hexo consumer
+        working-directory: importer
+        run: ./mvnw -B -ntp clean test dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt -DincludeScope=test
+      - name: Verify Native consumer without URL protocol flags
+        working-directory: importer
+        run: |
+          classpath="target/test-classes:target/classes:$(cat target/test-classpath.txt)"
+          java -agentlib:native-image-agent=config-output-dir=target/native-http-agent \
+            -cp "$classpath" com.zrlog.plugin.importer.AdminResourceSourceTest
+          native-image --no-fallback -H:ConfigurationFileDirectories=target/native-http-agent \
+            -cp "$classpath" -o target/native-http-download \
+            com.zrlog.plugin.importer.AdminResourceSourceTest
+          target/native-http-download
+      - name: Record exact sources and validation boundary
+        if: always()
+        run: |
+          {
+            echo 'Source-candidate validation only; not Maven Central resolution or a published plugin package.'
+            for repository in common core importer; do
+              echo "$repository $(git -C "$repository" rev-parse HEAD)"
+            done
+          } | tee source-candidate.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: http-file-consumer-evidence
+          path: |
+            source-candidate.txt
+            common/**/target/surefire-reports
+            core/target/surefire-reports
+            importer/target/surefire-reports
