@@ -19,10 +19,10 @@ jobs:
   consumers:
     runs-on: ubuntu-22.04
     timeout-minutes: 25
-    env:
-      # Source candidates must not enter the Maven cache used by published-version builds.
-      MAVEN_OPTS: -Dmaven.repo.local=${{ runner.temp }}/http-file-candidate-m2
     steps:
+      - name: Isolate candidate Maven dependencies
+        # Source candidates must not enter the cache used by published-version builds.
+        run: echo "MAVEN_OPTS=-Dmaven.repo.local=$RUNNER_TEMP/http-file-candidate-m2" >> "$GITHUB_ENV"
       - name: Validate pinned consumer sources
         env:
           CORE_COMMIT: ${{ inputs.core_commit }}
