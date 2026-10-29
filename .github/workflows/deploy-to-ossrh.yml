@@ -6,11 +6,25 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      core_commit:
+        description: Optional full plugin-core SHA for source-candidate HTTP file verification
+        type: string
+      importer_commit:
+        description: Optional full importer SHA (required together with core_commit)
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  http-file-consumers:
+    if: github.event_name == 'workflow_dispatch' && (inputs.core_commit != '' || inputs.importer_commit != '')
+    uses: ./.github/workflows/http-file-consumers.yml
+    with:
+      core_commit: ${{ inputs.core_commit }}
+      importer_commit: ${{ inputs.importer_commit }}
+
   release:
     runs-on: ubuntu-latest
     concurrency:
