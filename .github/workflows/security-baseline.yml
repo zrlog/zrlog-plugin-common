@@ -3,17 +3,37 @@ name: Security baseline
 on:
   push:
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: "23 4 * * 1"
 
 permissions:
+  actions: read
   contents: read
   security-events: write
   pull-requests: read
 
 jobs:
-  baseline:
-    uses: zrlog/zrlog-ops/.github/workflows/security-baseline.yml@main
-    with:
-      codeql_languages: java-kotlin
-      codeql_build_mode: none
+  codeql:
+    name: CodeQL
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:java-kotlin
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
