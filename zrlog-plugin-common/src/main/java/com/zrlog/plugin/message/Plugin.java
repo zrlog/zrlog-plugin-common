@@ -12,6 +12,12 @@ public class Plugin {
 
     private String id;
     private String version;
+    private int capabilityLifecycleVersion;
+
+    public int getCapabilityLifecycleVersion() { return capabilityLifecycleVersion; }
+    public void setCapabilityLifecycleVersion(int capabilityLifecycleVersion) {
+        this.capabilityLifecycleVersion = capabilityLifecycleVersion;
+    }
     private String name;
     private Set<String> paths = new LinkedHashSet<>();
     private Set<String> actions = new LinkedHashSet<>();

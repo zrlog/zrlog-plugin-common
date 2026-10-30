@@ -21,6 +21,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
@@ -55,8 +56,22 @@ public class SocketEncode {
     }
 
     public void doEncode(IOSession session, MsgPacket msgPacket) throws Exception {
-        reentrantLock.lock();
+        encode(session, msgPacket, null);
+    }
+
+    /** A monotonic budget shared by lock acquisition and all writes in this frame. */
+    public void doEncode(IOSession session, MsgPacket msgPacket, Duration budget) throws Exception {
+        if (budget == null || budget.isZero() || budget.isNegative())
+            throw new IllegalArgumentException("A positive write budget is required");
+        encode(session, msgPacket, new WriteBudget(nanoTime.getAsLong(), budget.toNanos()));
+    }
+
+    private void encode(IOSession session, MsgPacket msgPacket, WriteBudget budget) throws Exception {
+        long lockBudget = budget == null ? writeTimeoutNanos : budget.remaining();
+        if (!reentrantLock.tryLock(Math.max(0, lockBudget), TimeUnit.NANOSECONDS))
+            throw new SocketTimeoutException("Socket write lock deadline exceeded");
         try {
+            if (budget != null) budget.check();
             if (session.isClosed()) {
                 throw new ClosedChannelException();
             }
@@ -73,12 +88,12 @@ public class SocketEncode {
                 if (filePayload == null) {
                     throw new ProtocolException("FILE socket packet has no file payload");
                 }
-                writeFilePacket(channel, msgPacket, filePayload);
+                writeFilePacket(channel, msgPacket, filePayload, budget);
             } else {
                 ByteBuffer[] encodedPacket = encodeBuffers(msgPacket);
                 long writeStartedAt = nanoTime.getAsLong();
                 for (ByteBuffer buffer : encodedPacket) {
-                    writeFully(channel, buffer, writeStartedAt);
+                    writeFully(channel, buffer, writeStartedAt, budget);
                 }
             }
             session.getSendMsgCounter().incrementAndGet();
@@ -113,7 +128,7 @@ public class SocketEncode {
 
     private void writeFilePacket(SocketChannel channel,
                                  MsgPacket msgPacket,
-                                 FilePacketPayload filePayload) throws IOException {
+                                 FilePacketPayload filePayload, WriteBudget budget) throws IOException {
         int dataLength = filePayload.encodedLength();
         if (dataLength != msgPacket.getDataLength()) {
             throw new ProtocolException("FILE socket packet data length changed: expected "
@@ -130,11 +145,12 @@ public class SocketEncode {
                 throw new IOException("FILE payload length changed before send: expected "
                         + filePayload.getFileLength() + ", actual " + fileChannel.size());
             }
-            writeFully(channel, encodeHeader(msgPacket, methodBytes, dataLength), nanoTime.getAsLong());
-            writeFully(channel, filePayload.metadataBuffer(), nanoTime.getAsLong());
+            writeFully(channel, encodeHeader(msgPacket, methodBytes, dataLength), nanoTime.getAsLong(), budget);
+            writeFully(channel, filePayload.metadataBuffer(), nanoTime.getAsLong(), budget);
             ByteBuffer transferBuffer = ByteBuffer.allocate(FILE_TRANSFER_BUFFER_BYTES);
             long remaining = filePayload.getFileLength();
             while (remaining > 0L) {
+                if (budget != null) budget.check();
                 transferBuffer.clear();
                 transferBuffer.limit((int) Math.min(transferBuffer.capacity(), remaining));
                 int read = fileChannel.read(transferBuffer);
@@ -147,7 +163,7 @@ public class SocketEncode {
                 remaining -= read;
                 transferBuffer.flip();
                 // Large files use a progress deadline per bounded chunk instead of a whole-frame deadline.
-                writeFully(channel, transferBuffer, nanoTime.getAsLong());
+                writeFully(channel, transferBuffer, nanoTime.getAsLong(), budget);
             }
             if (fileChannel.position() != filePayload.getFileLength()
                     || fileChannel.size() != filePayload.getFileLength()) {
@@ -170,12 +186,15 @@ public class SocketEncode {
     }
 
     void writeFully(WritableByteChannel channel, ByteBuffer buffer) throws IOException {
-        writeFully(channel, buffer, nanoTime.getAsLong());
+        writeFully(channel, buffer, nanoTime.getAsLong(), null);
     }
 
-    private void writeFully(WritableByteChannel channel, ByteBuffer buffer, long writeStartedAt) throws IOException {
+    private void writeFully(WritableByteChannel channel, ByteBuffer buffer, long writeStartedAt, WriteBudget budget) throws IOException {
         long backoffNanos = INITIAL_ZERO_WRITE_BACKOFF_NANOS;
         while (buffer.hasRemaining()) {
+            if (budget != null) budget.check();
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Interrupted during socket write");
             long elapsedNanos = Math.max(0L, nanoTime.getAsLong() - writeStartedAt);
             if (elapsedNanos >= writeTimeoutNanos) {
                 throw new SocketTimeoutException("Socket write exceeded the "
@@ -195,11 +214,24 @@ public class SocketEncode {
                         + TimeUnit.NANOSECONDS.toMillis(writeTimeoutNanos) + " ms deadline");
             }
             long remainingNanos = writeTimeoutNanos - elapsedNanos;
-            waitNanos.accept(Math.min(backoffNanos, remainingNanos));
+            if (budget != null) remainingNanos = Math.min(remainingNanos, budget.remaining());
+            waitNanos.accept(Math.min(backoffNanos, Math.max(0, remainingNanos)));
             if (Thread.currentThread().isInterrupted()) {
                 throw new InterruptedIOException("Interrupted while waiting for socket write progress");
             }
             backoffNanos = Math.min(backoffNanos * 2, MAX_ZERO_WRITE_BACKOFF_NANOS);
+        }
+    }
+
+    private final class WriteBudget {
+        private final long startedAt, timeoutNanos;
+        private WriteBudget(long startedAt, long timeoutNanos) {
+            this.startedAt = startedAt;
+            this.timeoutNanos = timeoutNanos;
+        }
+        private long remaining() { return timeoutNanos - Math.max(0L, nanoTime.getAsLong() - startedAt); }
+        private void check() throws SocketTimeoutException {
+            if (remaining() <= 0) throw new SocketTimeoutException("Socket request write budget exhausted");
         }
     }
 }

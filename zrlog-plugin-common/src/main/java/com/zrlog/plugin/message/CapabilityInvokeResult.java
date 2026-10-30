@@ -7,7 +7,17 @@ public class CapabilityInvokeResult {
 
     private boolean success;
     private String errorMessage;
+    private boolean executionCompleted;
+    private boolean outcomeUncertain;
+    private String renderedText;
     private Map<String, Object> data = new HashMap<>();
+
+    public boolean isExecutionCompleted() { return executionCompleted; }
+    public void setExecutionCompleted(boolean executionCompleted) { this.executionCompleted = executionCompleted; }
+    public boolean isOutcomeUncertain() { return outcomeUncertain; }
+    public void setOutcomeUncertain(boolean outcomeUncertain) { this.outcomeUncertain = outcomeUncertain; }
+    public String getRenderedText() { return renderedText; }
+    public void setRenderedText(String renderedText) { this.renderedText = renderedText; }
 
     public boolean isSuccess() {
         return success;

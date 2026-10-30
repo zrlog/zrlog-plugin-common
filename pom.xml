@@ -4,7 +4,7 @@
     <groupId>com.hibegin</groupId>
     <artifactId>zrlog-plugin-parent</artifactId>
     <modelVersion>4.0.0</modelVersion>
-    <version>4.0.6</version>
+    <version>4.0.7</version>
     <packaging>pom</packaging>
     <description>ZrLog plugin protocol and shared libraries</description>
     <name>ZrLog Plugin Common</name>
