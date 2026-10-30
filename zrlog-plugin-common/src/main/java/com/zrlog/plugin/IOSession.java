@@ -48,6 +48,7 @@ public class IOSession {
 
     private final Map<String, Object> attr = new ConcurrentHashMap<>();
     private final Map<Integer, PipeInfo> pipeMap = new ConcurrentHashMap<>();
+    private final Map<Integer, DeferredResponse> deferredResponses = new ConcurrentHashMap<>();
     private final Map<String, Object> systemAttr = new ConcurrentHashMap<>();
     private final IActionHandler actionHandler;
     private volatile Plugin plugin;
@@ -227,6 +228,16 @@ public class IOSession {
                                   IMsgPacketCallBack callBack,
                                   Duration responseTimeout,
                                   Runnable requestAbort) {
+        return sendMsgIfOpen(msgPacket, callBack, responseTimeout, requestAbort, null);
+    }
+
+    private boolean sendMsgIfOpen(MsgPacket msgPacket, IMsgPacketCallBack callBack,
+                                  Duration responseTimeout, Runnable requestAbort, Duration writeBudget) {
+        if (msgPacket.getStatus() == MsgPacketStatus.RESPONSE_SUCCESS
+                || msgPacket.getStatus() == MsgPacketStatus.RESPONSE_ERROR) {
+            DeferredResponse deferred = deferredResponses.get(msgPacket.getMsgId());
+            if (deferred != null && deferred.capture(msgPacket)) return true;
+        }
         PipeInfo registeredPipeInfo = null;
         PipeInfo displacedPipeInfo = null;
         String rejectionReason = null;
@@ -267,7 +278,8 @@ public class IOSession {
             if (displacedPipeInfo != null) {
                 displacedPipeInfo.releaseResponse();
             }
-            socketEncode.doEncode(this, msgPacket);
+            if (writeBudget == null) socketEncode.doEncode(this, msgPacket);
+            else socketEncode.doEncode(this, msgPacket, writeBudget);
             return true;
         } catch (Exception e) {
             rollbackRegisteredPipeInfo(msgPacket.getMsgId(), registeredPipeInfo);
@@ -325,6 +337,72 @@ public class IOSession {
 
     public void sendMsg(MsgPacket msgPacket) {
         sendMsg(msgPacket, null);
+    }
+
+    /** Hold the invocation's response until its synchronous handler and cleanup have returned. */
+    public DeferredResponse deferResponse(int messageId) {
+        synchronized (dispatchLifecycleMonitor) {
+            if (closed || deferredResponses.size() >= maxPendingRequests)
+                throw new IllegalStateException("Cannot defer another plugin response");
+            DeferredResponse response = new DeferredResponse(messageId);
+            if (deferredResponses.putIfAbsent(messageId, response) != null)
+                throw new IllegalStateException("Plugin response is already deferred");
+            return response;
+        }
+    }
+
+    public final class DeferredResponse implements AutoCloseable {
+        private final int messageId;
+        private MsgPacket packet;
+        private boolean duplicate;
+        private boolean closed;
+        private int reservedBytes;
+
+        private DeferredResponse(int messageId) { this.messageId = messageId; }
+
+        private synchronized boolean capture(MsgPacket response) {
+            if (closed) return false;
+            if (packet == null && !duplicate) {
+                int bytes = retainedRequestBytes(response);
+                if (!pendingRequestMemoryBudget.tryReserve(bytes)) duplicate = true;
+                else if (!globalPendingRequestMemoryBudget.tryReserve(bytes)) {
+                    pendingRequestMemoryBudget.release(bytes);
+                    duplicate = true;
+                } else {
+                    reservedBytes = bytes;
+                    packet = response;
+                }
+                if (duplicate && response.getFilePayload() != null) response.getFilePayload().close();
+            }
+            else {
+                duplicate = true;
+                if (response.getFilePayload() != null) response.getFilePayload().close();
+            }
+            return true;
+        }
+
+        /** Multiple responses do not establish a unique business outcome. */
+        public synchronized MsgPacket getPacket() { return duplicate ? null : packet; }
+
+        @Override
+        public synchronized void close() {
+            if (closed) return;
+            closed = true;
+            deferredResponses.remove(messageId, this);
+            if (packet != null && packet.getFilePayload() != null) packet.getFilePayload().close();
+            pendingRequestMemoryBudget.release(reservedBytes);
+            globalPendingRequestMemoryBudget.release(reservedBytes);
+            packet = null;
+        }
+    }
+
+    /** Bounds the entire JSON send, including contention for the session write lock. */
+    public void sendJsonRequest(Object data, String method, int id, Duration budget) {
+        if (budget == null || budget.isZero() || budget.isNegative())
+            throw new IllegalArgumentException("A positive request budget is required");
+        MsgPacket packet = new MsgPacket(data, ContentType.JSON, MsgPacketStatus.SEND_REQUEST, id, method);
+        if (!sendMsgIfOpen(packet, null, budget, null, budget))
+            throw new IllegalStateException("Unable to send plugin request " + id + " (" + method + ")");
     }
 
     public void sendJsonMsg(Object data, String method, int id, MsgPacketStatus status) {

@@ -223,7 +223,8 @@ public class SocketDecode {
         if (msgPacket == null) {
             return false;
         }
-        if (ActionType.INIT_CONNECT.name().equals(msgPacket.getMethodStr())) {
+        if (ActionType.INIT_CONNECT.name().equals(msgPacket.getMethodStr())
+                || ActionType.CAPABILITY_CANCEL.name().equals(msgPacket.getMethodStr())) {
             return true;
         }
         return ActionType.HTTP_METHOD.name().equals(msgPacket.getMethodStr())

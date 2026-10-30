@@ -37,6 +37,16 @@ import static org.junit.Assert.assertTrue;
 public class NioClientTest {
 
     @Test
+    public void customHandlersMustExplicitlyOptIntoCompletionProtocol() {
+        assertEquals(2, new ClientActionHandler().capabilityLifecycleVersion());
+        assertEquals(0, new ClientActionHandler() { }.capabilityLifecycleVersion());
+        assertEquals(2, new ClientActionHandler() {
+            @Override
+            public int capabilityLifecycleVersion() { return 2; }
+        }.capabilityLifecycleVersion());
+    }
+
+    @Test
     public void shouldReadCacheableStaticPathsFromAssetManifest() {
         String manifest = "{"
                 + "\"files\":{"

@@ -21,6 +21,7 @@ public enum ActionType {
     REFRESH_CACHE(1, "更新缓存"),
     ARTICLE_VISIT_COUNT_ADD_ONE(1, "文章浏览量增加 1"),
     CAPABILITY_INVOKE(1, "调用插件能力"),
+    CAPABILITY_CANCEL(1, "取消插件能力调用"),
     NOTIFICATION_PUBLISH(1, "发布标准插件通知"),
     NOTIFICATION_CHANNEL_QUERY(0, "查询标准插件通知渠道"),
     SCHEDULER_QUERY(0, "查询插件定时任务"),

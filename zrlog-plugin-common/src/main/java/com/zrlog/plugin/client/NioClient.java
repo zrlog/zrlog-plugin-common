@@ -83,6 +83,7 @@ public class NioClient {
     public void connectServer(String[] args, List<Class<?>> classList, Class<? extends IPluginAction> pluginAction, List<Class<? extends IPluginService>> serviceList) throws IOException {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS.%1$tL %4$s %5$s%6$s%n");
         Plugin plugin = new Plugin();
+        plugin.setCapabilityLifecycleVersion(actionHandler.capabilityLifecycleVersion());
         String propertiesPath = "/plugin.properties";
         try (InputStream in = NioClient.class.getResourceAsStream(propertiesPath)) {
             if (in == null) {
@@ -307,7 +308,10 @@ public class NioClient {
     }
 
     static SocketDecode newSocketDecode(Executor messageHandlerExecutor) {
-        return new SocketDecode(messageHandlerExecutor, newSocketPacketMemoryBudget());
+        // Cancellation must be received even when every business handler is occupied.
+        Executor controlExecutor = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(MESSAGE_HANDLER_QUEUE_CAPACITY), new ThreadPoolExecutor.CallerRunsPolicy());
+        return new SocketDecode(messageHandlerExecutor, controlExecutor, newSocketPacketMemoryBudget());
     }
 
     List<PluginCapability> readCapabilities(Class<? extends IPluginService> serviceClass) {

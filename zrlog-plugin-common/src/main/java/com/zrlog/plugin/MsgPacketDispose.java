@@ -70,6 +70,8 @@ public class MsgPacketDispose {
             actionHandler.listComment(session, msgPacket);
         } else if (action == ActionType.CAPABILITY_INVOKE) {
             actionHandler.capabilityInvoke(session, msgPacket);
+        } else if (action == ActionType.CAPABILITY_CANCEL) {
+            actionHandler.capabilityCancel(session, msgPacket);
         } else if (action == ActionType.NOTIFICATION_PUBLISH) {
             actionHandler.notificationPublish(session, msgPacket);
         } else if (action == ActionType.NOTIFICATION_CHANNEL_QUERY) {

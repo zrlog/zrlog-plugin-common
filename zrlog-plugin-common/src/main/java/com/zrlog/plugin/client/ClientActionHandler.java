@@ -13,6 +13,7 @@ import com.zrlog.plugin.data.codec.MsgPacket;
 import com.zrlog.plugin.data.codec.MsgPacketStatus;
 import com.zrlog.plugin.message.CapabilityInvokeRequest;
 import com.zrlog.plugin.message.CapabilityInvokeResult;
+import com.zrlog.plugin.message.CapabilityCancelRequest;
 import com.zrlog.plugin.message.InitConnectRequest;
 import com.zrlog.plugin.message.PluginProcessInfo;
 import com.zrlog.plugin.message.ServiceRequest;
@@ -34,8 +35,15 @@ import java.util.logging.Logger;
 public class ClientActionHandler implements IActionHandler {
 
     private static final Logger LOGGER = LoggerUtil.getLogger(ClientActionHandler.class);
+    private final CapabilityInvocationControl invocationControl = new CapabilityInvocationControl();
 
     public static String ACTION_NOT_FOUND_PAGE = "<html><body><h1>Not Found</h1></body></html>";
+
+    @Override
+    public int capabilityLifecycleVersion() {
+        // Subclasses may still implement asynchronous legacy callbacks or views.
+        return getClass() == ClientActionHandler.class ? 2 : 0;
+    }
 
     @Override
     public void service(IOSession session, MsgPacket msgPacket) {
@@ -52,6 +60,10 @@ public class ClientActionHandler implements IActionHandler {
     @Override
     public void capabilityInvoke(IOSession session, MsgPacket msgPacket) {
         CapabilityInvokeRequest request = new Gson().fromJson(msgPacket.getDataStr(), CapabilityInvokeRequest.class);
+        if (request != null && request.isRequireCompletion()) {
+            invokeToCompletion(session, msgPacket, request);
+            return;
+        }
         ServiceInvokeResult serviceInvokeResult = handleServiceByName(session, msgPacket, request.getCapabilityKey());
         if (serviceInvokeResult.isOk()) {
             return;
@@ -60,6 +72,130 @@ public class ClientActionHandler implements IActionHandler {
         result.setSuccess(false);
         result.setErrorMessage(serviceInvokeResult.getMessage());
         session.sendJsonMsg(result, msgPacket.getMethodStr(), msgPacket.getMsgId(), MsgPacketStatus.RESPONSE_ERROR);
+    }
+
+    private void invokeToCompletion(IOSession session, MsgPacket packet, CapabilityInvokeRequest request) {
+        if (!validRequestId(request.getRequestId())) {
+            session.close();
+            return;
+        }
+        CapabilityInvocationControl.Execution execution = invocationControl.begin(session, packet.getMsgId(), request.getRequestId());
+        if (execution == null) {
+            // A duplicate must not acknowledge termination of the original still-running invocation.
+            session.close();
+            return;
+        }
+        boolean alreadyInterrupted = Thread.currentThread().isInterrupted();
+        CapabilityInvokeResult result = unknownOutcome();
+        try (IOSession.DeferredResponse deferred = session.deferResponse(packet.getMsgId())) {
+            if (execution.isCancelled() || request.getDeadlineEpochMillis() != null
+                    && request.getDeadlineEpochMillis() <= System.currentTimeMillis()) {
+                result = new CapabilityInvokeResult();
+                result.setErrorMessage("Invocation cancelled before execution");
+            } else if (request.getViewRequest() != null) {
+                result = renderViewToCompletion(session, packet, request, deferred);
+            } else {
+                ServiceInvokeResult invocation = handleServiceByName(session, packet, request.getCapabilityKey());
+                MsgPacket response = deferred.getPacket();
+                if (invocation.isOk() && response != null && response.getContentType() == ContentType.JSON
+                        && packet.getMethodStr().equals(response.getMethodStr())) {
+                    CapabilityInvokeResult parsed = new Gson().fromJson(response.getDataStr(), CapabilityInvokeResult.class);
+                    if (parsed != null && parsed.isSuccess() == (response.getStatus() == MsgPacketStatus.RESPONSE_SUCCESS)) result = parsed;
+                } else if (!invocation.isOk()) {
+                    result.setErrorMessage(invocation.getMessage());
+                }
+            }
+        } catch (RuntimeException error) {
+            result = unknownOutcome();
+        } catch (Error fatal) {
+            result = unknownOutcome();
+            throw fatal;
+        } finally {
+            if (execution.isCancelled()) {
+                Thread.interrupted(); // Sending the final acknowledgement must survive our own cancellation interrupt.
+                result.setSuccess(false);
+                result.setOutcomeUncertain(true);
+                result.setRenderedText(null);
+                result.setErrorMessage("Invocation cancelled; review its effects before retrying");
+            }
+            result.setExecutionCompleted(true);
+            try {
+                session.sendJsonMsg(result, packet.getMethodStr(), packet.getMsgId(),
+                        result.isSuccess() ? MsgPacketStatus.RESPONSE_SUCCESS : MsgPacketStatus.RESPONSE_ERROR);
+            } finally {
+                invocationControl.finish(execution);
+                if (alreadyInterrupted) Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    @Override
+    public void capabilityCancel(IOSession session, MsgPacket packet) {
+        CapabilityCancelRequest request = new Gson().fromJson(packet.getDataStr(), CapabilityCancelRequest.class);
+        if (request == null || !validRequestId(request.getRequestId())) return;
+        invocationControl.cancel(session, packet, request);
+    }
+
+    private CapabilityInvokeResult renderViewToCompletion(IOSession session, MsgPacket invocation,
+                                                          CapabilityInvokeRequest request, IOSession.DeferredResponse deferred) {
+        HttpRequestInfo view = request.getViewRequest();
+        if (!CapabilityInvokeRequest.HOST_VIEW_CAPABILITY.equals(request.getCapabilityKey())
+                || view.getHttpMethod() != com.zrlog.plugin.common.type.HttpMethod.GET
+                || view.getUri() == null || !view.getUri().startsWith("/") || view.getUri().contains("\\"))
+            throw new IllegalArgumentException("Invalid host view request");
+        for (String segment : view.getUri().split("/"))
+            if ("..".equals(segment) || ".".equals(segment)) throw new IllegalArgumentException("Invalid host view path");
+        if (request.isViewResource()) return renderViewResource(request);
+        ActionType action = ActionType.HTTP_METHOD;
+        MsgPacket packet = new MsgPacket(view, ContentType.JSON, MsgPacketStatus.SEND_REQUEST, invocation.getMsgId(), action.name());
+        httpMethod(session, packet);
+        MsgPacket response = deferred.getPacket();
+        if (response == null || !action.name().equals(response.getMethodStr()) || response.getData() == null
+                || response.getContentType() == ContentType.FILE
+                || response.getData().remaining() > CapabilityInvokeRequest.MAX_VIEW_RESPONSE_BYTES)
+            return unknownOutcome();
+        CapabilityInvokeResult result = new CapabilityInvokeResult();
+        result.setSuccess(response.getStatus() == MsgPacketStatus.RESPONSE_SUCCESS);
+        if (result.isSuccess()) {
+            java.nio.ByteBuffer bytes = response.getData().asReadOnlyBuffer();
+            byte[] content = new byte[bytes.remaining()];
+            bytes.get(content);
+            result.setRenderedText(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+        } else result.setErrorMessage("Plugin view rendering failed");
+        return result;
+    }
+
+    private CapabilityInvokeResult renderViewResource(CapabilityInvokeRequest request) {
+        CapabilityInvokeResult result = new CapabilityInvokeResult();
+        try (InputStream input = ClientActionHandler.class.getResourceAsStream("/templates" + request.getViewRequest().getUri())) {
+            if (input == null) { result.setErrorMessage("Plugin view resource was not found"); return result; }
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            while (true) {
+                if (Thread.currentThread().isInterrupted() || request.getDeadlineEpochMillis() != null
+                        && request.getDeadlineEpochMillis() <= System.currentTimeMillis())
+                    throw new IllegalStateException("Plugin view resource budget exhausted");
+                int count = input.read(buffer);
+                if (count < 0) break;
+                if (output.size() + count > CapabilityInvokeRequest.MAX_VIEW_RESPONSE_BYTES)
+                    throw new IllegalStateException("Plugin view resource exceeds the inline response limit");
+                output.write(buffer, 0, count);
+            }
+            result.setSuccess(true);
+            result.setRenderedText(new String(output.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+            return result;
+        } catch (java.io.IOException error) { throw new IllegalStateException("Plugin view resource read failed", error); }
+    }
+
+    private static boolean validRequestId(String requestId) {
+        return requestId != null && requestId.matches("[a-zA-Z0-9_.-]{1,128}");
+    }
+
+    private static CapabilityInvokeResult unknownOutcome() {
+        CapabilityInvokeResult result = new CapabilityInvokeResult();
+        result.setOutcomeUncertain(true);
+        result.setErrorMessage("Plugin handler did not return a confirmed outcome");
+        return result;
     }
 
     @Override

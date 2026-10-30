@@ -5,6 +5,15 @@ import com.zrlog.plugin.data.codec.MsgPacket;
 
 public interface IActionHandler {
 
+    /**
+     * Completion protocol supported by this handler. Custom handlers opt in only after
+     * moving legacy refresh callbacks to declared event handlers and ensuring that
+     * capability work (including views in version 2) finishes before returning.
+     */
+    default int capabilityLifecycleVersion() {
+        return 0;
+    }
+
     void service(final IOSession session, final MsgPacket msgPacket);
 
     void initConnect(final IOSession session, final MsgPacket msgPacket);
@@ -52,6 +61,9 @@ public interface IActionHandler {
     }
 
     default void capabilityInvoke(final IOSession session, final MsgPacket msgPacket) {
+    }
+
+    default void capabilityCancel(final IOSession session, final MsgPacket msgPacket) {
     }
 
     default void notificationPublish(final IOSession session, final MsgPacket msgPacket) {

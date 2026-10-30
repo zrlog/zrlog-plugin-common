@@ -48,8 +48,27 @@ jobs:
           version=$(./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout)
           test "$GITHUB_REF_NAME" = "v$version"
           [[ "$version" != *SNAPSHOT* ]]
-      - name: Verify release dependencies and tests
+      - name: Resolve publication channel
+        id: version
+        shell: bash
+        run: |
+          version=$(./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout)
+          if [[ "$version" == *-SNAPSHOT ]]; then
+            echo "snapshot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "snapshot=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify dependencies and tests
         run: ./mvnw -B -ntp clean verify
+      - name: Verify snapshot publication without uploading
+        if: steps.version.outputs.snapshot == 'true'
+        run: python3 scripts/check-snapshot-publication.py
+      - name: Publish development snapshots
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version.outputs.snapshot == 'true'
+        env:
+          CENTRAL_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+        run: ./mvnw -B -ntp -Psnapshot deploy -DskipTests
       - name: Import signing key
         if: startsWith(github.ref, 'refs/tags/v')
         env:
