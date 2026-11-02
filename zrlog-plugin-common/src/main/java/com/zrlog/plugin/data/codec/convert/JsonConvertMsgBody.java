@@ -4,9 +4,6 @@ import com.google.gson.Gson;
 
 import java.nio.ByteBuffer;
 
-/**
- * Created by xiaochun on 2016/2/13.
- */
 public class JsonConvertMsgBody implements ConvertMsgBody {
 
     @Override

@@ -3,9 +3,6 @@ package com.zrlog.plugin.data.codec;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Created by xiaochun on 2016/2/13.
- */
 public class HttpRequestInfo extends BaseHttpRequestInfo {
     private String uri;
     private String userName;

@@ -29,9 +29,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * Created by xiaochun on 2016/2/12.
- */
 public class ClientActionHandler implements IActionHandler {
 
     private static final Logger LOGGER = LoggerUtil.getLogger(ClientActionHandler.class);

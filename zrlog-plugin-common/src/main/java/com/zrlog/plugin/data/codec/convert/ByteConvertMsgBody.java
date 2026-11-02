@@ -2,9 +2,6 @@ package com.zrlog.plugin.data.codec.convert;
 
 import java.nio.ByteBuffer;
 
-/**
- * Created by xiaochun on 2016/2/13.
- */
 public class ByteConvertMsgBody implements ConvertMsgBody {
 
     @Override
