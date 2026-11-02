@@ -5,9 +5,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Created by xiaochun on 2016/2/12.
- */
 public class Plugin {
 
     private String id;

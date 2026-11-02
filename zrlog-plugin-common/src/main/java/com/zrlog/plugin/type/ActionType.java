@@ -1,8 +1,5 @@
 package com.zrlog.plugin.type;
 
-/**
- * Created by xiaochun on 2016/2/12.
- */
 public enum ActionType {
 
     INIT_CONNECT(0, "插件初始化"), HTTP_FILE(0, "获取HTTP资源文件"), HTTP_METHOD(0, "处理HTTP请求方法"),

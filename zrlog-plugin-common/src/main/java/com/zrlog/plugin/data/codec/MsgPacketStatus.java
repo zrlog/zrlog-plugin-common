@@ -1,8 +1,5 @@
 package com.zrlog.plugin.data.codec;
 
-/**
- * Created by xiaochun on 2016/2/13.
- */
 public enum MsgPacketStatus {
     SEND_REQUEST((byte) 0), RESPONSE_SUCCESS((byte) 1), RESPONSE_ERROR((byte) 3), UNKNOWN((byte) -1);
 

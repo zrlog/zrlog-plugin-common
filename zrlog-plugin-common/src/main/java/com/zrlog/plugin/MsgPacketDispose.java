@@ -10,9 +10,6 @@ import com.zrlog.plugin.type.ActionType;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * Created by xiaochun on 2016/2/12.
- */
 public class MsgPacketDispose {
 
     private static final Logger LOGGER = LoggerUtil.getLogger(MsgPacketDispose.class);
