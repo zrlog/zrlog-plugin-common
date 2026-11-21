@@ -8,7 +8,10 @@ public class BaseHttpRequestInfo {
 
     public static final String DARK_MODE_HEADER = "Dark-Mode";
     public static final String ADMIN_COLOR_PRIMARY_HEADER = "Admin-Color-Primary";
+    public static final String ADMIN_THEME_HEADER = "Admin-Theme";
+    public static final String ADMIN_COMPACT_MODE_HEADER = "Admin-Compact-Mode";
     public static final String DEFAULT_ADMIN_COLOR_PRIMARY = "#1677ff";
+    public static final String DEFAULT_ADMIN_THEME = "default";
 
     protected String accessUrl;
     protected Map<String, String> header;
@@ -19,6 +22,8 @@ public class BaseHttpRequestInfo {
     protected Long maxResponseBodyBytes;
     protected Boolean darkMode;
     protected String adminColorPrimary;
+    protected String adminTheme;
+    protected Boolean adminCompactMode;
 
     public String getAccessUrl() {
         return accessUrl;
@@ -84,48 +89,76 @@ public class BaseHttpRequestInfo {
     }
 
     public String getAdminColorPrimary() {
-        String value = adminColorPrimary;
-        if (value == null || value.trim().isEmpty()) {
-            value = getHeaderValue(ADMIN_COLOR_PRIMARY_HEADER, "admin_color_Primary", "admin_color_primary");
-        }
-        if (value == null || value.trim().isEmpty()) {
-            return DEFAULT_ADMIN_COLOR_PRIMARY;
-        }
-        return value;
+        return appearanceValue(adminColorPrimary, DEFAULT_ADMIN_COLOR_PRIMARY,
+                ADMIN_COLOR_PRIMARY_HEADER, "admin_color_primary");
     }
 
     public void setAdminColorPrimary(String adminColorPrimary) {
         this.adminColorPrimary = adminColorPrimary;
     }
 
+    public String getAdminTheme() {
+        return appearanceValue(adminTheme, DEFAULT_ADMIN_THEME, ADMIN_THEME_HEADER);
+    }
+
+    public void setAdminTheme(String adminTheme) {
+        this.adminTheme = adminTheme;
+    }
+
+    public boolean isAdminCompactMode() {
+        return adminCompactMode != null
+                ? adminCompactMode
+                : Boolean.parseBoolean(getHeaderValue(ADMIN_COMPACT_MODE_HEADER));
+    }
+
+    public void setAdminCompactMode(Boolean adminCompactMode) {
+        this.adminCompactMode = adminCompactMode;
+    }
+
+    private String appearanceValue(String value, String defaultValue, String key, String... aliases) {
+        String normalized = nonBlank(value);
+        if (normalized == null) {
+            normalized = getHeaderValue(key, aliases);
+        }
+        return normalized == null ? defaultValue : normalized;
+    }
+
     private String getHeaderValue(String key, String... aliases) {
         if (header == null || header.isEmpty()) {
             return null;
         }
-        String value = header.get(key);
-        if (value != null && !value.trim().isEmpty()) {
+        String value = getNonBlankHeader(key);
+        if (value != null) {
             return value;
         }
         for (String alias : aliases) {
-            value = header.get(alias);
-            if (value != null && !value.trim().isEmpty()) {
+            value = getNonBlankHeader(alias);
+            if (value != null) {
                 return value;
             }
         }
+        return null;
+    }
+
+    private String getNonBlankHeader(String key) {
+        String value = nonBlank(header.get(key));
+        if (value != null) {
+            return value;
+        }
         for (Map.Entry<String, String> entry : header.entrySet()) {
-            String entryKey = entry.getKey();
-            if (entryKey == null) {
-                continue;
-            }
-            if (entryKey.equalsIgnoreCase(key)) {
-                return entry.getValue();
-            }
-            for (String alias : aliases) {
-                if (entryKey.equalsIgnoreCase(alias)) {
-                    return entry.getValue();
-                }
+            value = nonBlank(entry.getValue());
+            if (value != null && key.equalsIgnoreCase(entry.getKey())) {
+                return value;
             }
         }
         return null;
+    }
+
+    private static String nonBlank(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }
