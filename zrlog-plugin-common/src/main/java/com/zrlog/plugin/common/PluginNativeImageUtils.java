@@ -80,6 +80,7 @@ public class PluginNativeImageUtils {
 
     public static void usedGsonObject() {
         gsonNativeAgentByClazz(Arrays.asList(FileDesc.class, HttpRequestInfo.class, BaseHttpRequestInfo.class, HttpResponseInfo.class,
+                PluginAppearance.class,
                 Plugin.class, BlogRunTime.class, Comment.class, CreateArticleRequest.class, PublicInfo.class,
                 TemplatePath.class, UploadFileResponseEntry.class, User.class, BucketVO.class,
                 PluginCapability.class, CapabilityInvokeRequest.class, CapabilityInvokeResult.class,
